@@ -62,7 +62,7 @@ def zone(coordinates):
     return int((coordinates[0] + 180) / 6) + 1
 
 def computebboxmatrix(centerpoint,levels):
-    size=1000. #2560. # openeo wrks with 256x256 blocks and the resolution is 10m
+    size=2560. #2560. # openeo wrks with 256x256 blocks and the resolution is 10m
     overlap=320. # the underlying neural network uses 32 pixel borders on an 10m resolution image
     epsilon=1. # 
     
@@ -165,7 +165,18 @@ if __name__ == '__main__':
 
     #segmentationband.download("segmented.tiff")
     # postprocess for vectorization
-    segmentationband=segmentationband.apply_dimension(load_udf('udf_sobel_felzenszwalb.py'), dimension='t', runtime="Python")
+    segmentationband=segmentationband.apply_neighborhood(
+        lambda data: data.run_udf(udf=load_udf('udf_sobel_felzenszwalb.py'), runtime='Python'),
+        size=[
+            {'dimension': 'x', 'value': 512, 'unit': 'px'},
+            {'dimension': 'y', 'value': 512, 'unit': 'px'}
+        ],
+        overlap=[
+            {'dimension': 'x', 'value': 0, 'unit': 'px'},
+            {'dimension': 'y', 'value': 0, 'unit': 'px'}
+        ]
+    )
+
 
     # vectorization
     vectorization=segmentationband.raster_to_vector()
