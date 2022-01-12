@@ -10,7 +10,6 @@ import pyproj
 import numpy
 import json
 from pathlib import Path
-from print_geojson import print_geojson
 
 openeo_url='openeo-dev.vito.be'
 
@@ -19,8 +18,8 @@ year=2019
 layerID="TERRASCOPE_S2_TOC_V2"
 layerID_sentinelhub="SENTINEL2_L2A"
 
-startdate=str(year)+'-01-01' #'-05-07' #'-08-20'
-enddate=str(year)+'-09-30' #'-05-17' #'-09-04'
+startdate=str(year)+'-01-01'
+enddate=str(year)+'-09-30'
 
 job_options={
     'driver-memory':'8G',
@@ -121,24 +120,45 @@ if __name__ == '__main__':
 
     ndviband= s2_bands.ndvi(red="B04", nir="B08")
 
+    #ndviband.download("all_inputs.nc")
+
     # select top 12 usable layers
     ndviband=ndviband.apply_dimension(load_udf('udf_reduce_images.py'),dimension='t',runtime="Python")
+
+    #ndviband.download("ndvi_inputs.nc")
     
     # produce the segmentation image
-    segmentationband=ndviband.apply_dimension(load_udf('segmentation_core.py'), dimension='t', runtime="Python")
+    segmentationband = ndviband.apply_neighborhood(
+        lambda data: data.run_udf(udf=load_udf('segmentation.py'), runtime='Python',
+                                  context={
+                                      'startdate': startdate,
+                                      'enddate': enddate
+                                  }),
+        size=[
+            {'dimension': 'x', 'value': 64, 'unit': 'px'},
+            {'dimension': 'y', 'value': 64, 'unit': 'px'}
+        ],
+        overlap=[
+            {'dimension': 'x', 'value': 32, 'unit': 'px'},
+            {'dimension': 'y', 'value': 32, 'unit': 'px'}
+        ]
+    )
 
+    #segmentationband.download("segmented.tiff")
     # postprocess for vectorization
     segmentationband=segmentationband.apply_dimension(load_udf('udf_sobel_felzenszwalb.py'), dimension='t', runtime="Python")
 
     # vectorization
     vectorization=segmentationband.raster_to_vector()
 
-    with open('delineation_process','w') as f: json.dump(vectorization.graph, f, indent=2) 
+    result = vectorization.download("results/out.json")
 
-    job = vectorization.execute_batch("result_vectorization.json",job_options=job_options)
-    job.get_results().download_file("results/result_vectorized.json")
-
-    print_geojson('results/result_vectorized.json', 'results/result_vectorization_corrected.json')
+    with open("results/out.json") as f:
+        polygons = json.load(f)
+    from shapely.geometry import shape
+    import geopandas as gpd
+    geom = [shape(p) for p in polygons]
+    gpd.GeoDataFrame(geometry=geom,crs="EPSG:32631").to_file("results/parcels.gpkg", layer='parcels', driver="GPKG")
             
     logger.info('FINISHED')
 
