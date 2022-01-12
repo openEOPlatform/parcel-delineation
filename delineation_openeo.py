@@ -32,14 +32,6 @@ logging.basicConfig(level=logging.INFO)
 logging.getLogger().setLevel(logging.INFO)
 
 
-def getImageCollection(eoconn, layer, bbox, bands):
-    return eoconn.load_collection(
-        layer,
-        temporal_extent=[startdate, enddate],
-        spatial_extent=dict(zip(["west", "south", "east", "north"], bbox)),
-        bands=bands
-    ).filter_bbox(crs="EPSG:4326", **dict(zip(["west", "south", "east", "north"], bbox)))
-
 
 def get_resource(relative_path):
     return str(Path( relative_path))
@@ -143,29 +135,47 @@ if __name__ == '__main__':
         bands=["B04", "B08","SCL"]
     )
 
-
-    s2_bands.process("mask_scl_dilation", data=s2_bands, scl_band_name="SCL")
+    s2_bands = s2_bands.process("mask_scl_dilation", data=s2_bands, scl_band_name="SCL")
 
     ndviband= s2_bands.ndvi(red="B04", nir="B08")
 
+    #ndviband.download("all_inputs.nc")
+
     # select top 12 usable layers
     ndviband=ndviband.apply_dimension(load_udf('udf_reduce_images.py'),dimension='t',runtime="Python")
+
+    #ndviband.download("ndvi_inputs.nc")
     
     # produce the segmentation image
-    segmentationband=ndviband.apply_dimension(load_udf('segmentation_core.py'), dimension='t', runtime="Python")
+    segmentationband = ndviband.apply_neighborhood(
+        lambda data: data.run_udf(udf=load_udf('segmentation.py'), runtime='Python',
+                                  context={
+                                      'startdate': startdate,
+                                      'enddate': enddate
+                                  }),
+        size=[
+            {'dimension': 'x', 'value': 64, 'unit': 'px'},
+            {'dimension': 'y', 'value': 64, 'unit': 'px'}
+        ],
+        overlap=[
+            {'dimension': 'x', 'value': 32, 'unit': 'px'},
+            {'dimension': 'y', 'value': 32, 'unit': 'px'}
+        ]
+    )
 
+    #segmentationband.download("segmented.tiff")
     # postprocess for vectorization
     segmentationband=segmentationband.apply_dimension(load_udf('udf_sobel_felzenszwalb.py'), dimension='t', runtime="Python")
 
     # vectorization
     vectorization=segmentationband.raster_to_vector()
 
-    with open('delineation_process','w') as f: json.dump(vectorization.graph, f, indent=2) 
+    result = vectorization.download("results/out.json")
+    #job = vectorization.execute_batch("result_vectorization.json",job_options=job_options)
+    #job.get_results().download_file("results/result_vectorized.json")
 
-    job = vectorization.execute_batch("result_vectorization.json",job_options=job_options)
-    job.get_results().download_file("results/result_vectorized.json")
-
-    print_geojson('results/result_vectorization.json', 'results/result_vectorization_corrected.json')
+    #print_geojson('results/result_vectorization.json', 'results/result_vectorization_corrected.json')
+    print_geojson('results/out.json', 'results/result_vectorization_corrected.json')
             
     logger.info('FINISHED')
 
