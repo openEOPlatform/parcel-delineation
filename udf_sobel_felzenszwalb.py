@@ -13,7 +13,7 @@ def apply_datacube(cube: XarrayDataCube, context: Dict) -> XarrayDataCube:
 
     # get the underlying numpy array
     inarray=cube.get_array().squeeze('t',drop=True).squeeze('bands',drop=True)
-    inimage=inarray.values#(inarray.values*inarray.values)/255
+    inimage=inarray.values
     inimage-=np.min(inimage)
     inimage=inimage*249./np.max(inimage)
     image=np.clip((inimage-0.3*250)*2,0.,249.)

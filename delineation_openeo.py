@@ -15,8 +15,6 @@ openeo_url='openeo-dev.vito.be'
 
 bbox = [5.04776065, 51.213841, 5.06244073, 51.22255853]
 year=2019
-layerID="TERRASCOPE_S2_TOC_V2"
-layerID_sentinelhub="SENTINEL2_L2A"
 
 startdate=str(year)+'-01-01'
 enddate=str(year)+'-09-30'
