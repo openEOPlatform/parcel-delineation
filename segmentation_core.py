@@ -14,6 +14,8 @@ from tensorflow.keras.backend import clear_session
 from xarray.core.common import zeros_like, ones_like
 from xarray.ufuncs import isnan as ufuncs_isnan
 import xarray
+from openeo.udf import XarrayDataCube
+from typing import Dict
 #from tensorflow_core.config import set_visible_devices
 
 # needed because joblib hijacks root logger
@@ -214,11 +216,8 @@ class Segmentation():
             if (xEnd==bbox[2]): break
     
         return windowlist
-    
-# openeo runner
-def inner_apply_hypercube(cube,context):
 
-    from openeo_udf.api.datacube import DataCube
+def apply_datacube(cube: XarrayDataCube, context: Dict) -> XarrayDataCube:
 
     modeldir='/data/users/Public/driesseb/fielddelineation'
     if context is not None:
@@ -247,7 +246,7 @@ def inner_apply_hypercube(cube,context):
     result=result.astype(np.float64)
     result=result.expand_dims('bands',0).assign_coords(bands=['delineation'])
     result=result.expand_dims('t',0).assign_coords(t=[np.datetime64(str(cubearray.t.dt.year.values[0])+'-01-01')])
-    return DataCube(result)
+    return XarrayDataCube(result)
     
     
         

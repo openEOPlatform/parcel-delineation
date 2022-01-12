@@ -9,16 +9,16 @@ import os
 import pyproj
 import numpy
 import json
-import utils
-import scipy.signal
 from pathlib import Path
 from print_geojson import print_geojson
 
-openeo_url='http://openeo-dev.vito.be'
+openeo_url='openeo-dev.vito.be'
 
 centerpoint=[5.0551,51.2182]
 year=2019
 layerID="TERRASCOPE_S2_TOC_V2"
+layerID_sentinelhub="SENTINEL2_L2A"
+
 startdate=str(year)+'-01-01' #'-05-07' #'-08-20'
 enddate=str(year)+'-09-30' #'-05-17' #'-09-04'
 
@@ -31,7 +31,6 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 logging.getLogger().setLevel(logging.INFO)
 
-utilspath=os.path.dirname(os.path.relpath(utils.__file__,'.'))+'/'
 
 def getImageCollection(eoconn, layer, bbox, bands):
     return eoconn.load_collection(
@@ -41,36 +40,6 @@ def getImageCollection(eoconn, layer, bbox, bands):
         bands=bands
     ).filter_bbox(crs="EPSG:4326", **dict(zip(["west", "south", "east", "north"], bbox)))
 
-def makekernel(size: int) -> numpy.ndarray:
-    assert size % 2 == 1
-    kernel_vect = scipy.signal.windows.gaussian(size, std=size / 3.0, sym=True)
-    kernel = numpy.outer(kernel_vect, kernel_vect)
-    kernel = kernel / kernel.sum()
-    return kernel
-
-def create_advanced_mask(band, band_math_workaround=True):
-    # in openEO, 1 means mask (remove pixel) 0 means keep pixel
-    classification=band
-    # keep useful pixels, so set to 1 (remove) if smaller than threshold
-    first_mask = ~ ((classification == 4) | (classification == 5) | (classification == 6) | (classification == 7))
-    first_mask = first_mask.apply_kernel(makekernel(17))
-    # remove pixels smaller than threshold, so pixels with a lot of neighbouring good pixels are retained?
-    if band_math_workaround:
-        first_mask = first_mask.add_dimension("bands", "mask", type="bands").band("mask")
-    first_mask = first_mask > 0.057
-
-    # remove cloud pixels so set to 1 (remove) if larger than threshold
-    second_mask = (classification == 3) | (classification == 8) | (classification == 9) | (classification == 10)
-    second_mask = second_mask.apply_kernel(makekernel(161))
-    if band_math_workaround:
-        second_mask = second_mask.add_dimension("bands", "mask", type="bands").band("mask")
-    second_mask = second_mask > 0.1
- 
-    # TODO: the use of filter_temporal is a trick to make cube merging work, needs to be fixed in openeo client
-    return first_mask.filter_temporal(startdate, enddate) | second_mask.filter_temporal(startdate, enddate)
-    #return first_mask | second_mask
-    #return first_mask
-
 
 def get_resource(relative_path):
     return str(Path( relative_path))
@@ -78,17 +47,7 @@ def get_resource(relative_path):
 def load_udf(relative_path):
     with open(get_resource(relative_path), 'r+') as f:
         return f.read()
-    
-def wrap_udf(udffile):
-    ws='    '
-    header= '# -*- coding: utf-8 -*-\n'+\
-            '# Uncomment the import only for coding support~\n'+\
-            'from openeo_udf.api.datacube import DataCube\n'+\
-            'from typing import Dict\n'+\
-            'def apply_hypercube(cube: DataCube, context: Dict) -> DataCube:\n'
-    footer= ws+'\n'+ws+'return inner_apply_hypercube(cube,context)\n'
-    udf=header+ws+load_udf(udffile).replace('\n','\n'+ws)+footer
-    return udf
+
 
 def replaceparams_udf(udf,params=None):
     if params is not None:
@@ -175,21 +134,17 @@ if __name__ == '__main__':
     bboxes=computebboxmatrix(centerpoint, 1)
     bboxgeojson=computebboxgeojson(bboxes)
 
-    # compute the mask
-    maskband=create_advanced_mask(getImageCollection(eoconn, layerID, bboxes[0,0,:], ["SCENECLASSIFICATION_20M"]).band("SCENECLASSIFICATION_20M"))\
-
     # compute ndvi
-    ndviband=getImageCollection(eoconn, layerID, bboxes[0,0,:], ["TOC-B04_10M","TOC-B08_10M"])\
-        .ndvi(red="TOC-B04_10M",nir="TOC-B08_10M")
+    s2_bands = getImageCollection(eoconn, layerID, bboxes[0, 0, :], ["B04", "B08","SCL"])
+    s2_bands.process("mask_scl_dilation", data=s2_bands, scl_band_name="SCL")
 
-    # set NaN where mask is active
-    ndviband=ndviband.mask(maskband)
+    ndviband= s2_bands.ndvi(red="B04", nir="B08")
 
     # select top 3 usable layers
     ndviband=ndviband.apply_dimension(load_udf('udf_reduce_images.py'),dimension='t',runtime="Python")
     
     # produce the segmentation image
-    segmentationband=ndviband.apply_dimension(wrap_udf('segmentation_core.py'), dimension='t', runtime="Python")
+    segmentationband=ndviband.apply_dimension(load_udf('segmentation_core.py'), dimension='t', runtime="Python")
 
     # postprocess for vectorization
     segmentationband=segmentationband.apply_dimension(load_udf('udf_sobel_felzenszwalb.py'), dimension='t', runtime="Python")
