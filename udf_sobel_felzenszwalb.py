@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 # Uncomment the import only for coding support
-from openeo_udf.api.datacube import DataCube
+from openeo.udf import XarrayDataCube
 from typing import Dict
 
 
-def apply_hypercube(cube: DataCube, context: Dict) -> DataCube:
+def apply_datacube(cube: XarrayDataCube, context: Dict) -> XarrayDataCube:
     # import sys
     # sys.path.append(r'/data/users/Public/driesseb/dep/')
     
@@ -70,4 +70,4 @@ def apply_hypercube(cube: DataCube, context: Dict) -> DataCube:
 #     ],'t':[np.datetime64('2019-01-01')]})
 #     print_xarray_dataarray('sobelfelzenswald',xarr)
 
-    return DataCube(outarr)
+    return XarrayDataCube(outarr)

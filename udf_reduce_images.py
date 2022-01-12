@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 # Uncomment the import only for coding support
-from openeo_udf.api.datacube import DataCube
+from openeo.udf import XarrayDataCube
 from typing import Dict
 
 
-def apply_hypercube(cube: DataCube, context: Dict) -> DataCube:
+def apply_datacube(cube: XarrayDataCube, context: Dict) -> XarrayDataCube:
 
     import numpy
 
@@ -29,5 +29,5 @@ def apply_hypercube(cube: DataCube, context: Dict) -> DataCube:
     resultarray=inputarray[ [i[0] for i in counts[:maxlayers]] ]
     resultarray=resultarray.sortby(resultarray.t,ascending=True)
     resultarray=resultarray.assign_coords(t=trange[:maxlayers])   
-    return DataCube(resultarray)
+    return XarrayDataCube(resultarray)
 
