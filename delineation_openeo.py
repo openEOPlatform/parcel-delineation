@@ -32,29 +32,9 @@ logging.basicConfig(level=logging.INFO)
 logging.getLogger().setLevel(logging.INFO)
 
 
-def getImageCollection(eoconn, layer, bbox, bands):
-    return eoconn.load_collection(
-        layer,
-        temporal_extent=[startdate, enddate],
-        spatial_extent=dict(zip(["west", "south", "east", "north"], bbox)),
-        bands=bands
-    ).filter_bbox(crs="EPSG:4326", **dict(zip(["west", "south", "east", "north"], bbox)))
-
-
-def get_resource(relative_path):
-    return str(Path( relative_path))
-
 def load_udf(relative_path):
-    with open(get_resource(relative_path), 'r+') as f:
+    with open(str(Path(relative_path)), 'r+') as f:
         return f.read()
-
-
-def replaceparams_udf(udf,params=None):
-    if params is not None:
-        p=json.dumps(params)+'\n'
-        udf=udf.replace("udfparams={}","udfparams="+p)
-    return udf
-
 
 def zone(coordinates):
     if 56 <= coordinates[1] < 64 and 3 <= coordinates[0] < 12:
@@ -75,7 +55,6 @@ def computebboxmatrix(centerpoint,levels):
     epsilon=1. # 
     
     # get centerpoint meters
-    #latlon = pyproj.Proj('EPSG:4326')
     p = pyproj.Proj(proj='utm',zone=zone(centerpoint),ellps='WGS84',preserve_units=False)
     x,y = p(*centerpoint)    
 
@@ -101,13 +80,12 @@ def computebboxmatrix(centerpoint,levels):
             bboxes[i,j,0],bboxes[i,j,1]=p(bboxes[i,j,0],bboxes[i,j,1],inverse=True)
             bboxes[i,j,2],bboxes[i,j,3]=p(bboxes[i,j,2],bboxes[i,j,3],inverse=True)
     
-    return bboxes
+    return bboxes[0, 0, :]
 
 def computebboxgeojson(bboxmatrix):
     geojson={
         "type":"FeatureCollection",
         "name": "bboxaround_{}:{}".format(*centerpoint),
-#        "crs":{"type":"name","properties":{"name":"urn:ogc:def:crs:OGC:1.3:CRS84"}},
         "features":[]
     }
     for i in range(bboxmatrix.shape[0]):
@@ -128,23 +106,18 @@ if __name__ == '__main__':
     
     # connection
     eoconn=openeo.connect(openeo_url)
-    eoconn.authenticate_oidc()#basic(openeo_user,openeo_pass)
+    eoconn.authenticate_oidc()
     
     #build the bounding boxes
-    bboxes=computebboxmatrix(centerpoint, 1)
-    bboxgeojson=computebboxgeojson(bboxes)
+    bbox=computebboxmatrix(centerpoint, 1)
 
-    bbox = bboxes[0, 0, :]
-    # compute ndvi
     s2_bands = eoconn.load_collection(
         "TERRASCOPE_S2_TOC_V2",
         temporal_extent=[startdate, enddate],
         spatial_extent=dict(zip(["west", "south", "east", "north"], bbox)),
         bands=["B04", "B08","SCL"]
     )
-
-
-    s2_bands.process("mask_scl_dilation", data=s2_bands, scl_band_name="SCL")
+    s2_bands = s2_bands.process("mask_scl_dilation", data=s2_bands, scl_band_name="SCL")
 
     ndviband= s2_bands.ndvi(red="B04", nir="B08")
 
@@ -165,7 +138,7 @@ if __name__ == '__main__':
     job = vectorization.execute_batch("result_vectorization.json",job_options=job_options)
     job.get_results().download_file("results/result_vectorized.json")
 
-    print_geojson('results/result_vectorization.json', 'results/result_vectorization_corrected.json')
+    print_geojson('results/result_vectorized.json', 'results/result_vectorization_corrected.json')
             
     logger.info('FINISHED')
 

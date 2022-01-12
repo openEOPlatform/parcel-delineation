@@ -16,14 +16,12 @@ from xarray.ufuncs import isnan as ufuncs_isnan
 import xarray
 from openeo.udf import XarrayDataCube
 from typing import Dict
-#from tensorflow_core.config import set_visible_devices
 
 # needed because joblib hijacks root logger
 logging.basicConfig(level=logging.INFO)
 
 class Segmentation():
-    
-    
+
     def __init__(self, logger=None):
         if logger is None:
             self.log = logging.getLogger(__name__)
@@ -32,7 +30,6 @@ class Segmentation():
         #set_visible_devices([], 'GPU')
     
     ################ FUNCTIONS ############################
-    
     def load_models(self,modeldir):
         # Load the models and make the prediction functions
         if self.models is None: 
