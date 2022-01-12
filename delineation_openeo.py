@@ -175,7 +175,13 @@ if __name__ == '__main__':
     #job.get_results().download_file("results/result_vectorized.json")
 
     #print_geojson('results/result_vectorization.json', 'results/result_vectorization_corrected.json')
-    print_geojson('results/out.json', 'results/result_vectorization_corrected.json')
+    with open("results/out.json") as f:
+        polygons = json.load(f)
+    from shapely.geometry import shape
+    import geopandas as gpd
+    geom = [shape(p) for p in polygons]
+    gpd.GeoDataFrame(geometry=geom,crs="EPSG:32631").to_file("results/parcels.gpkg", layer='parcels', driver="GPKG")
+
             
     logger.info('FINISHED')
 
