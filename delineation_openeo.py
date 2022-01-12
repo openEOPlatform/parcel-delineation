@@ -13,7 +13,7 @@ from pathlib import Path
 
 openeo_url='openeo-dev.vito.be'
 
-centerpoint=[5.0551,51.2182]
+bbox = [5.04776065, 51.213841, 5.06244073, 51.22255853]
 year=2019
 layerID="TERRASCOPE_S2_TOC_V2"
 layerID_sentinelhub="SENTINEL2_L2A"
@@ -48,68 +48,12 @@ def zone(coordinates):
         return 37
     return int((coordinates[0] + 180) / 6) + 1
 
-def computebboxmatrix(centerpoint,levels):
-    size=1000. #2560. # openeo wrks with 256x256 blocks and the resolution is 10m
-    overlap=320. # the underlying neural network uses 32 pixel borders on an 10m resolution image
-    epsilon=1. # 
-    
-    # get centerpoint meters
-    p = pyproj.Proj(proj='utm',zone=zone(centerpoint),ellps='WGS84',preserve_units=False)
-    x,y = p(*centerpoint)    
 
-    # build the meters offset structure
-    bboxes=numpy.zeros((2*levels-1,2*levels-1,4),dtype=numpy.float64)
-    for i in range(2*levels-1):
-        bboxes[i,:,0]=(i-(levels-0.5))*size-(i-(levels-1.))*overlap
-        bboxes[:,i,1]=(i-(levels-0.5))*size-(i-(levels-1.))*overlap
-    bboxes[:,:,2]=bboxes[:,:,0]+size
-    bboxes[:,:,3]=bboxes[:,:,1]+size
-    
-    # add the x,y coordinates
-    bboxes[:,:,0]=bboxes[:,:,0]+x+epsilon
-    bboxes[:,:,1]=bboxes[:,:,1]+y+epsilon
-    bboxes[:,:,2]=bboxes[:,:,2]+x-epsilon
-    bboxes[:,:,3]=bboxes[:,:,3]+y-epsilon
-
-    logger.info("UTM ZONE: "+str(zone(centerpoint)))
-    
-    # convert back to lat/lon
-    for i in range(2*levels-1):
-        for j in range(2*levels-1):
-            bboxes[i,j,0],bboxes[i,j,1]=p(bboxes[i,j,0],bboxes[i,j,1],inverse=True)
-            bboxes[i,j,2],bboxes[i,j,3]=p(bboxes[i,j,2],bboxes[i,j,3],inverse=True)
-    
-    return bboxes[0, 0, :]
-
-def computebboxgeojson(bboxmatrix):
-    geojson={
-        "type":"FeatureCollection",
-        "name": "bboxaround_{}:{}".format(*centerpoint),
-        "features":[]
-    }
-    for i in range(bboxmatrix.shape[0]):
-        for j in range(bboxmatrix.shape[1]):
-            b=bboxmatrix[i,j]
-            geojson["features"].append({
-                "type":"Feature",
-                "properties":{ "xtile":i, "ytile":j },
-                "geometry":{"type":"Polygon","coordinates":[[ [b[0],b[1]], [b[0],b[3]], [b[2],b[3]], [b[2],b[1]], [b[0],b[1]] ]]}
-            })
-    
-    print(json.dumps(geojson))
-    return geojson
-
-
-    
 if __name__ == '__main__':
     
-    # connection
     eoconn=openeo.connect(openeo_url)
     eoconn.authenticate_oidc()
     
-    #build the bounding boxes
-    bbox=computebboxmatrix(centerpoint, 1)
-
     s2_bands = eoconn.load_collection(
         "TERRASCOPE_S2_TOC_V2",
         temporal_extent=[startdate, enddate],
@@ -119,8 +63,6 @@ if __name__ == '__main__':
     s2_bands = s2_bands.process("mask_scl_dilation", data=s2_bands, scl_band_name="SCL")
 
     ndviband= s2_bands.ndvi(red="B04", nir="B08")
-
-    #ndviband.download("all_inputs.nc")
 
     # select top 12 usable layers
     ndviband=ndviband.apply_dimension(load_udf('udf_reduce_images.py'),dimension='t',runtime="Python")
@@ -143,8 +85,8 @@ if __name__ == '__main__':
             {'dimension': 'y', 'value': 32, 'unit': 'px'}
         ]
     )
-
     #segmentationband.download("segmented.tiff")
+
     # postprocess for vectorization
     segmentationband=segmentationband.apply_dimension(load_udf('udf_sobel_felzenszwalb.py'), dimension='t', runtime="Python")
 
