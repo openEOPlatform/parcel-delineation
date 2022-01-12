@@ -134,13 +134,21 @@ if __name__ == '__main__':
     bboxes=computebboxmatrix(centerpoint, 1)
     bboxgeojson=computebboxgeojson(bboxes)
 
+    bbox = bboxes[0, 0, :]
     # compute ndvi
-    s2_bands = getImageCollection(eoconn, layerID, bboxes[0, 0, :], ["B04", "B08","SCL"])
+    s2_bands = eoconn.load_collection(
+        "TERRASCOPE_S2_TOC_V2",
+        temporal_extent=[startdate, enddate],
+        spatial_extent=dict(zip(["west", "south", "east", "north"], bbox)),
+        bands=["B04", "B08","SCL"]
+    )
+
+
     s2_bands.process("mask_scl_dilation", data=s2_bands, scl_band_name="SCL")
 
     ndviband= s2_bands.ndvi(red="B04", nir="B08")
 
-    # select top 3 usable layers
+    # select top 12 usable layers
     ndviband=ndviband.apply_dimension(load_udf('udf_reduce_images.py'),dimension='t',runtime="Python")
     
     # produce the segmentation image
