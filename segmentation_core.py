@@ -52,13 +52,8 @@ class Segmentation():
         model1 = models[0]
         model2 = models[1]
         model3 = models[2]
-    
-        #from parcel.utils.raster import Window
-        #windowObj = Window(window=window, tile=tileobj)
-    
+        
         # Read the data
-        #ndvi_stack = windowObj.get_raw_arrays('s2_ndvi')
-        #mask_stack = windowObj.get_raw_arrays('s2_mask')
         ndvi_stack = data['s2_ndvi'].values.copy()
         mask_stack = data['s2_mask'].values.copy()
     
@@ -127,8 +122,6 @@ class Segmentation():
         bbox=(
             (min([i[0][0] for i in windowlist]), max([i[0][1] for i in windowlist])),
             (min([i[1][0] for i in windowlist]), max([i[1][1] for i in windowlist]))
-    #             (windowlist[0][0][0],windowlist[len(windowlist)-1][0][1]) , 
-    #             (windowlist[0][1][0],windowlist[len(windowlist)-1][1][1]) 
         )
         #retvals=[]
         result=zeros_like(inputdata['s2_ndvi'][:,:,0]).astype(np.ubyte)
@@ -154,15 +147,12 @@ class Segmentation():
                 symax=-stride if window[1][1]!=bbox[1][1] else 0
                 # write window to destination
                 subWindow = (
-    #                     (window[0][0] + stride, window[0][1] - stride),
-    #                     (window[1][0] + stride, window[1][1] - stride)
                     (window[0][0]+sxmin, window[0][1]+sxmax),
                     (window[1][0]+symin, window[1][1]+symax)
                 )
                 # We had to pull in some bad images as well, need to log this!
                 if allgood == 0: self.log.debug("Window {} successfully processed, but some bad images were included!".format(window))
                 else: self.log.debug("Window {} successfully processed!".format(window))
-                #retvals.append((subWindow,data))
                 result[
                     subWindow[0][0]-bbox[0][0]:subWindow[0][1]-bbox[0][0],
                     subWindow[1][0]-bbox[1][0]:subWindow[1][1]-bbox[1][0]
@@ -257,7 +247,6 @@ def inner_apply_hypercube(cube,context):
     result=result.astype(np.float64)
     result=result.expand_dims('bands',0).assign_coords(bands=['delineation'])
     result=result.expand_dims('t',0).assign_coords(t=[np.datetime64(str(cubearray.t.dt.year.values[0])+'-01-01')])
-#    result=result.astype(numpy.float64)    
     return DataCube(result)
     
     

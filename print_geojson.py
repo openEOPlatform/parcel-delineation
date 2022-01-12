@@ -11,7 +11,6 @@ import json
 
  
 def print_geojson(filein,fileout):
-    
     protogeom={
         "type":"FeatureCollection",
         "name":"small_field",

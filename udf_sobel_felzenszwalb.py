@@ -5,10 +5,6 @@ from typing import Dict
 
 
 def apply_datacube(cube: XarrayDataCube, context: Dict) -> XarrayDataCube:
-    # import sys
-    # sys.path.append(r'/data/users/Public/driesseb/dep/')
-    
-
     import numpy as np
     from skimage import segmentation
     from skimage.filters import sobel
@@ -21,7 +17,6 @@ def apply_datacube(cube: XarrayDataCube, context: Dict) -> XarrayDataCube:
     inimage-=np.min(inimage)
     inimage=inimage*249./np.max(inimage)
     image=np.clip((inimage-0.3*250)*2,0.,249.)
-#    image[image < 0.3 * 250]=0
 
     # compute edges
     edges=sobel(image)
@@ -38,36 +33,10 @@ def apply_datacube(cube: XarrayDataCube, context: Dict) -> XarrayDataCube:
     # This could definitely be improved and made more objective.
     # NOTE: new implementation uses scaled data, so threshold needs to be scaled as well!
     mergedsegment[image==0] = 0
-    #mergedsegment[image < 0.3 * 250] = 0
     mergedsegment[mergedsegment < 0] = 0
-    #mergedsegment[mergedsegment > 0] = 200
 
     outarr=xarray.DataArray(mergedsegment.reshape(cube.get_array().shape),dims=cube.get_array().dims,coords=cube.get_array().coords)
     outarr=outarr.astype(np.float64)
     outarr=outarr.where(outarr!=0,np.nan)
-
-#     #############################################
-#  
-#     attent=1.01**(0.5*image)
-#     attent-=np.min(attent)
-#     attent1=attent*249./np.max(attent)
-#  
-#     attent=(image-0.3*250)*2
-#     attent2=np.clip(attent,0.,249.)
-#  
-#     from parcel.feature.segmentation.new_tamasmerge.print_xdatacubexarray import print_xarray_dataarray
-#     arrs=np.expand_dims(np.concatenate((
-#         np.expand_dims(inimage,0),
-#         np.expand_dims(image,0),
-#         np.expand_dims(mergedsegment,0),
-#         np.expand_dims(outarr[0,0].values,0)
-#     )),0)
-#     xarr=xarray.DataArray(arrs,dims=cube.get_array().dims,coords={'bands':[
-#         'input',
-#         'edges',
-#         'segments',
-#         'mergedsegments'
-#     ],'t':[np.datetime64('2019-01-01')]})
-#     print_xarray_dataarray('sobelfelzenswald',xarr)
 
     return XarrayDataCube(outarr)

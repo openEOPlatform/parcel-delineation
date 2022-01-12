@@ -12,23 +12,15 @@ import json
 import utils
 import scipy.signal
 from pathlib import Path
-# from parcel.feature.segmentation.print_geojson import print_geojson
+from print_geojson import print_geojson
 
-openeo_url='http://openeo-dev.vito.be' #.vgt.vito.be/openeo/1.0.0/'
-#openeo_url='http://openeo.vgt.vito.be/openeo/1.0.0/'
-
-# openeo_user=os.environ.get('OPENEO_USER','bart')
-# openeo_pass=os.environ.get('OPENEO_PASS','bart123')
+openeo_url='http://openeo-dev.vito.be'
 
 centerpoint=[5.0551,51.2182]
 year=2019
 layerID="TERRASCOPE_S2_TOC_V2"
-startdate=str(year)+'-01-01'
-enddate=str(year)+'-09-30'
-# startdate=str(year)+'-05-07'
-# enddate=str(year)+'-05-17'
-# startdate=str(year)+'-08-20'
-# enddate=str(year)+'-09-04'
+startdate=str(year)+'-01-01' #'-05-07' #'-08-20'
+enddate=str(year)+'-09-30' #'-05-17' #'-09-04'
 
 job_options={
     'driver-memory':'8G',
@@ -142,8 +134,6 @@ def computebboxmatrix(centerpoint,levels):
     bboxes[:,:,2]=bboxes[:,:,2]+x-epsilon
     bboxes[:,:,3]=bboxes[:,:,3]+y-epsilon
 
-#     print(bboxes[:,:,2]-bboxes[:,:,0])
-#     print(bboxes[:,:,3]-bboxes[:,:,1])
     logger.info("UTM ZONE: "+str(zone(centerpoint)))
     
     # convert back to lat/lon
@@ -207,20 +197,12 @@ if __name__ == '__main__':
     # vectorization
     vectorization=segmentationband.raster_to_vector()
 
-    # # selection in the middle
-    # vectorization = vectorization.process("run_udf",{
-    #     "data": vectorization._pg,
-    #     "udf":replaceparams_udf(load_udf('udf_selectpolygon.py'),{'centerpoint':centerpoint}),
-    #     "runtime":"Python"
-    # })
-
-
     with open('delineation_process','w') as f: json.dump(vectorization.graph, f, indent=2) 
 
-    vectorization.execute_batch("result_vectorization.json",job_options=job_options)
-#        .download("result_vectorized")
+    job = vectorization.execute_batch("result_vectorization.json",job_options=job_options)
+    job.get_results().download_file("results/result_vectorized.json")
 
-    # print_geojson('result_vectorization.json', 'result_vectorization_corrected.json')
+    print_geojson('results/result_vectorization.json', 'results/result_vectorization_corrected.json')
             
     logger.info('FINISHED')
 
