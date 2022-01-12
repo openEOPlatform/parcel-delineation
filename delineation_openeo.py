@@ -48,10 +48,10 @@ def zone(coordinates):
 
 
 if __name__ == '__main__':
-    
+
     eoconn=openeo.connect(openeo_url)
     eoconn.authenticate_oidc()
-    
+
     s2_bands = eoconn.load_collection(
         "TERRASCOPE_S2_TOC_V2",
         temporal_extent=[startdate, enddate],
@@ -86,7 +86,18 @@ if __name__ == '__main__':
     #segmentationband.download("segmented.tiff")
 
     # postprocess for vectorization
-    segmentationband=segmentationband.apply_dimension(load_udf('udf_sobel_felzenszwalb.py'), dimension='t', runtime="Python")
+    segmentationband=segmentationband.apply_neighborhood(
+        lambda data: data.run_udf(udf=load_udf('udf_sobel_felzenszwalb.py'), runtime='Python'),
+        size=[
+            {'dimension': 'x', 'value': 512, 'unit': 'px'},
+            {'dimension': 'y', 'value': 512, 'unit': 'px'}
+        ],
+        overlap=[
+            {'dimension': 'x', 'value': 0, 'unit': 'px'},
+            {'dimension': 'y', 'value': 0, 'unit': 'px'}
+        ]
+    )
+
 
     # vectorization
     vectorization=segmentationband.raster_to_vector()
