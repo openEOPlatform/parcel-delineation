@@ -15,16 +15,16 @@ def apply_datacube(cube: XarrayDataCube, context: Dict) -> XarrayDataCube:
 
     # get the underlying xarray
     inputarray=cube.get_array()
-    
+
     # prepare uniform coordinates
     trange=numpy.arange(numpy.datetime64(str(inputarray.t.dt.year.values[0])+'-01-01'),numpy.datetime64(str(inputarray.t.dt.year.values[0])+'-01-31'))
-    
+
     # order the layers by decreasing number of clear pixels
     counts=list(sorted(zip(
         [i for i in range(inputarray.shape[0])],
         inputarray.count(dim=['x','y']).values[:,0]
     ), key=lambda i: i[1], reverse=True))
-    
+
     # return the selected ones 
     resultarray=inputarray[ [i[0] for i in counts[:maxlayers]] ]
     resultarray=resultarray.sortby(resultarray.t,ascending=True)
