@@ -1,5 +1,4 @@
 import os
-import utm
 import pyproj
 import shapely
 from pathlib import Path
@@ -16,26 +15,6 @@ def _get_epsg(lat, zone_nr):
 def load_udf(relative_path):
     with open(str(Path(relative_path)), 'r+') as f:
         return f.read()
-
-def window_around_centroid(gj, window_size):
-    utm_zone_nr = utm.from_latlon(gj.y, gj.x)[2]
-    epsg_UTM_field = _get_epsg(gj.y, utm_zone_nr)
-    field_centroid = gj
-    Proj_WGS =4326
-    Proj_UTM = epsg_UTM_field
-    def geometry_to_crs(geometry, crs_from, crs_to):
-        if crs_from == crs_to:
-            return geometry
-        proj_from =pyproj.Proj(crs_from)
-        proj_to = pyproj.Proj(crs_to)
-        def project(x,y, z = 0):
-            return pyproj.transform(proj_from, proj_to, x, y, always_xy= True)
-        return shapely.ops.transform(project, geometry)
-
-    field_centroid_UTM = geometry_to_crs(field_centroid, Proj_WGS,Proj_UTM)
-    field_buffer_UTM = field_centroid_UTM.buffer((window_size/2)*10, cap_style = 3)
-    field_buffer_WGS = geometry_to_crs(field_buffer_UTM, Proj_UTM,Proj_WGS)
-    return field_buffer_WGS
 
 
 def create_mask_cropland(eoconn, LC_collection, bbox):

@@ -12,8 +12,6 @@ import json
 from pathlib import Path
 import geopandas as gpd
 import shapely
-from delineation_functions import window_around_centroid, create_input_NDVI_cube\
-    , _do_image_selection, _do_segmentation, _do_vectorization,_get_epsg, _do_vectorization_watershed
 
 
 logger = logging.getLogger(__name__)
