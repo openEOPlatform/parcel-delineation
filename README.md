@@ -10,6 +10,10 @@ Please contact the authors in case you're interested in a field detector!
 ## Authors
 
 - Kristof Van Tricht
+- Jeroen Dries
+
+Tuning by:
+- Kasper Bonte
 - Bart Driessen
 
 [VITO Remote Sensing](https://remotesensing.vito.be)

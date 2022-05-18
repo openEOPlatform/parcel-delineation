@@ -55,7 +55,6 @@ def apply_datacube(cube: XarrayDataCube, context: Dict) -> XarrayDataCube:
 
     else:
         # return the selected ones
-        #inputarray.shape.index(inputarray.t.values.shape[0])
         resultarray=inputarray[[i[0] for i in counts[:maxlayers]]]
         resultarray=resultarray.sortby(resultarray.t,ascending=True)
         resultarray=resultarray.assign_coords(t=trange[:maxlayers])
