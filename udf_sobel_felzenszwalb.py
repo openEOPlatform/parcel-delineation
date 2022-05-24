@@ -25,7 +25,7 @@ def apply_datacube(cube: XarrayDataCube, context: Dict) -> XarrayDataCube:
     # merging segments
     mergedsegment = graph.cut_threshold(segment, bgraph, 0.15, in_place=False)
 
-    ### create random numbers for the segments
+    # create random numbers for the segments
     unique_classes = np.unique(mergedsegment)
     random_numbers = np.random.randint(0, 1000000, size = len(np.unique(mergedsegment)))
 

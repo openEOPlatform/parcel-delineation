@@ -44,54 +44,54 @@ class Segmentation():
         else: self.log=logger
         self.models=None
     
-    def processWindow(self, models, window, data, debug = False, patch_size = 128):
+    def processWindow(self, models, data, patch_size = 128):
     
         model1 = models[0]
         model2 = models[1]
         model3 = models[2]
         
-        # Read the data
+        ## read the xarray data as a numpy array
         ndvi_stack = data['s2_ndvi'].values.copy()
         mask_stack = data['s2_mask'].values.copy()
     
-        # Mask the ndvi data
+        ## mask the ndvi data
         ndvi_stack[mask_stack == 1] = 255
         ndvi_stack[ndvi_stack > 250] = 255
     
-        # Count the amount of invalid data per acquisition and sort accordingly
+        ## count the amount of invalid data per acquisition and sort accordingly
         sum_invalid = np.sum(ndvi_stack == 255, axis=(0, 1))
     
-        # if we have enough clear images, we're good to go.
+        ## if we have enough clear images (without ANY missing values), we're good to go, and we will use all of them (could be more than 3!)
         if len(np.where(sum_invalid == 0)[0]) > 3:
             allgood = 1
             self.log.debug((f'Found {len(np.where(sum_invalid == 0)[0])} clear acquisitions -> good to go'))
             ndvi_stack = ndvi_stack[:, :, np.where(sum_invalid == 0)[0]]
 
-        # else we need to add some bad images
+        ## else we need to add some images that do contain some nan's; in this case we will select just the 3 best ones
         else:
             self.log.debug((f'Found {len(np.where(sum_invalid == 0)[0])} clear acquisitions -> appending some bad images as well!'))
             allgood = 0
             idxsorted = np.argsort(sum_invalid)
             ndvi_stack = ndvi_stack[:, :, idxsorted[0:4]]
     
-        # Fill the NaN values
+        ## fill the NaN values with 0
         ndvi_stack[ndvi_stack == 255] = 0
     
-        # To fractional number
+        ## convert to fractional number
         ndvi_stack = ndvi_stack / 250.
     
-        # Now make sure we can run this window
+        ## check whether you actually supplied 3 images or more
         nrValidBands = ndvi_stack.shape[2]
 
-        # If the stack hasn't at least 3 bands, we cannot process this window
+        ## if the stack doesn't have at least 3 bands, we cannot process this window
         if nrValidBands < 3:
-            self.log.warning('Not enough input data for window {} -> skipping!'.format(str(window)))
+            self.log.warning('Not enough input data for this window -> skipping!')
             clear_session()
-            #del model1, model2, model3 # TODO only when spark
             gc.collect()
             return None
+        ## else, let's do inference!
         else:
-            # We'll do 12 predictions: use 3 networks, and for each randomly take 3 NDVI bands and repeat 4 times
+            ## we'll do 12 predictions: use 3 networks, and for each randomly take 3 NDVI bands and repeat 4 times
             prediction = np.zeros((patch_size, patch_size, 12))
             for i in range(4):
                 prediction[:, :, i] = np.squeeze(
@@ -113,59 +113,61 @@ class Segmentation():
             clear_session() # to avoid memory leakage executors
             gc.collect()
 
-            # Final prediction is the median of all predictions per pixel
+            ## final prediction is the median of all predictions per pixel
             final_prediction = np.median(prediction, axis = 2)
 
-            return window, (final_prediction, allgood)
+            return (final_prediction, allgood)
     
 
 
 def apply_datacube(cube: XarrayDataCube, context: Dict) -> XarrayDataCube:
 
     modeldir='/data/users/Public/driesseb/fielddelineation'
-    if context is not None:
-        modeldir=context.get('modeldir',modeldir)
-        debug = context.get('debug', False)
-        patch_size = context.get('patch_size', 128)
-    else:
-        debug = False
-        patch_size = 0
 
+    ## if you would specify a context, you can use the method "get" to retrieve the value
+    # if context is not None:
+    #     startdate = context.get('startdate', "2019-01-01")
 
+    ## get the array and transpose
     cubearray:xarray.DataArray = cube.get_array()
     cubearray = cubearray.transpose('x','bands','y','t')
 
+    ## get nan indices
     nan_locations_NDVI = ufuncs_isnan(cubearray)
-    ### clamp out of range NDVI values
+
+    ## clamp out of range NDVI values
     cubearray = cubearray.where(cubearray < 0.92, 0.92)
     cubearray = cubearray.where(cubearray > -0.08,np.nan)
 
-    #set back the original nan values
+    ## xarray nan to np nan (we will pass a numpy array)
     cubearray = cubearray.where(~nan_locations_NDVI,np.nan)
 
+    ## rescale data and just take NDVI to get rid of the band dimension
     cubearray = ((cubearray +0.08)*250.)[:,0,:,:]
 
-    inputarray=cubearray.transpose('x','y','t')
-    inputmask=ones_like(inputarray)
-    inputmask=inputmask.where(ufuncs_isnan(inputarray), 0.)
+    ## transpose to format accepted by model
+    inputarray = cubearray.transpose('x','y','t')
+
+    ## create a mask where all valid values are 1 and all nans are 0
+    inputmask = ones_like(inputarray)
+    inputmask = inputmask.where(ufuncs_isnan(inputarray), 0.)
+
+    ## wrap the input array and the mask in a dictionary to pass to the processWindow method of the Segmentation class
     inputdata={
         's2_ndvi': inputarray,
         's2_mask': inputmask
     }
 
+    ## load in the pretrained U-Net keras models and do inference!
     s=Segmentation()
-
     models = load_models(modeldir)
-    window, (result, allgood) = s.processWindow(models, [], inputdata, debug = debug)
+    (result, allgood) = s.processWindow(models, inputdata)
 
+    ## transform your numpy array predictions into an xarray
     result=result.astype(np.float64)
     result_xarray = xarray.DataArray(result,dims=['x','y'],coords=dict(x=cubearray.coords['x'],y=cubearray.coords['y']))
     result_xarray=result_xarray.expand_dims('t',0).assign_coords(t=[np.datetime64(str(cubearray.t.dt.year.values[0])+'-01-01')])
 
-    #openEO assumes a fixed data order
+    #openEO assumes a fixed data order, so transpose your result and store it in a XarrayDataCube that you return
     result_xarray = result_xarray.transpose('t','y','x')
     return XarrayDataCube(result_xarray)
-
-        
-    
-    
