@@ -164,10 +164,19 @@ def apply_datacube(cube: XarrayDataCube, context: Dict) -> XarrayDataCube:
     (result, allgood) = s.processWindow(models, inputdata)
 
     ## transform your numpy array predictions into an xarray
-    result=result.astype(np.float64)
-    result_xarray = xarray.DataArray(result,dims=['x','y'],coords=dict(x=cubearray.coords['x'],y=cubearray.coords['y']))
-    result_xarray=result_xarray.expand_dims('t',0).assign_coords(t=[np.datetime64(str(cubearray.t.dt.year.values[0])+'-01-01')])
+    result = result.astype(np.float64)
+    result_xarray = xarray.DataArray(
+        result,
+        dims=["x", "y"],
+        coords={"x": cubearray.coords["x"], "y": cubearray.coords["y"]},
+    )
+    # Reintroduce time and bands dimensions
+    result_xarray = result_xarray.expand_dims(
+        dim={
+            "t": [np.datetime64(str(cubearray.t.dt.year.values[0]) + "-01-01")],
+            "bands": ["prediction"],
+        },
+        axis=0,
+    )
 
-    #openEO assumes a fixed data order, so transpose your result and store it in a XarrayDataCube that you return
-    result_xarray = result_xarray.transpose('t','y','x')
     return XarrayDataCube(result_xarray)
