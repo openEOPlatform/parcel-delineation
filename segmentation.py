@@ -176,7 +176,6 @@ def apply_datacube(cube: XarrayDataCube, context: Dict) -> XarrayDataCube:
             "t": [np.datetime64(str(cubearray.t.dt.year.values[0]) + "-01-01")],
             "bands": ["prediction"],
         },
-        axis=0,
     )
 
     return XarrayDataCube(result_xarray)
