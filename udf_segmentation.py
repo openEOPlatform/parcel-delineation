@@ -11,8 +11,7 @@ import xarray
 from openeo.udf import XarrayDataCube
 from typing import Dict
 
-# Needed because joblib hijacks root logger
-logging.basicConfig(level=logging.INFO)
+_log = logging.getLogger(__name__)
 
 
 @functools.lru_cache(maxsize=25)
@@ -38,12 +37,6 @@ def load_models(modeldir):
 class Segmentation():
     
     
-    def __init__(self, logger=None):
-        if logger is None:
-            self.log = logging.getLogger(__name__)
-        else: self.log=logger
-        self.models=None
-    
     def processWindow(self, models, data, patch_size = 128):
     
         model1 = models[0]
@@ -64,12 +57,12 @@ class Segmentation():
         ## if we have enough clear images (without ANY missing values), we're good to go, and we will use all of them (could be more than 3!)
         if len(np.where(sum_invalid == 0)[0]) > 3:
             allgood = 1
-            self.log.debug((f'Found {len(np.where(sum_invalid == 0)[0])} clear acquisitions -> good to go'))
+            _log.debug((f'Found {len(np.where(sum_invalid == 0)[0])} clear acquisitions -> good to go'))
             ndvi_stack = ndvi_stack[:, :, np.where(sum_invalid == 0)[0]]
 
         ## else we need to add some images that do contain some nan's; in this case we will select just the 3 best ones
         else:
-            self.log.debug((f'Found {len(np.where(sum_invalid == 0)[0])} clear acquisitions -> appending some bad images as well!'))
+            _log.debug((f'Found {len(np.where(sum_invalid == 0)[0])} clear acquisitions -> appending some bad images as well!'))
             allgood = 0
             idxsorted = np.argsort(sum_invalid)
             ndvi_stack = ndvi_stack[:, :, idxsorted[0:4]]
@@ -85,7 +78,7 @@ class Segmentation():
 
         ## if the stack doesn't have at least 3 bands, we cannot process this window
         if nrValidBands < 3:
-            self.log.warning('Not enough input data for this window -> skipping!')
+            _log.warning('Not enough input data for this window -> skipping!')
             clear_session()
             gc.collect()
             return None

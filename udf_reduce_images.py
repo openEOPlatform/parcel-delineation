@@ -1,12 +1,8 @@
-# -*- coding: utf-8 -*-
-# Uncomment the import only for coding support
+import numpy
 from openeo.udf import XarrayDataCube
-from typing import Dict
 
 
-def apply_datacube(cube: XarrayDataCube, context: Dict) -> XarrayDataCube:
-
-    import numpy
+def apply_datacube(cube: XarrayDataCube, context: dict) -> XarrayDataCube:
 
     # set how much images to select in the order of highest number of clear pixels
     maxlayers=12

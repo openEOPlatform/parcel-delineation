@@ -1,14 +1,12 @@
-# -*- coding: utf-8 -*-
-# Uncomment the import only for coding support
 from openeo.udf import XarrayDataCube
-from typing import Dict
+import numpy as np
+from skimage import segmentation
+from skimage.filters import sobel
+from skimage.future import graph
+import xarray
 
-def apply_datacube(cube: XarrayDataCube, context: Dict) -> XarrayDataCube:
-    import numpy as np
-    from skimage import segmentation
-    from skimage.filters import sobel
-    from skimage.future import graph
-    import xarray
+def apply_datacube(cube: XarrayDataCube, context: dict) -> XarrayDataCube:
+
 
     # get the underlying numpy array
     inarray=cube.get_array().squeeze('t',drop=True).squeeze('bands',drop=True)
