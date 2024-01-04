@@ -6,7 +6,7 @@ from typing import Dict
 
 import numpy as np
 import xarray
-from openeo.udf import XarrayDataCube
+from openeo.udf import XarrayDataCube, inspect
 from tensorflow.keras.backend import clear_session
 from tensorflow.keras.models import load_model
 from xarray.core.common import ones_like
@@ -36,108 +36,42 @@ def load_models(modeldir):
     ]
 
 
-class Segmentation:
-    def processWindow(self, models, data, patch_size=128):
-        model1 = models[0]
-        model2 = models[1]
-        model3 = models[2]
+def processWindow(models, ndvi_stack, patch_size=128):
+    ## check whether you actually supplied 3 images or more
+    nrValidBands = ndvi_stack.shape[2]
 
-        ## read the xarray data as a numpy array
-        ndvi_stack = data["s2_ndvi"].values.copy()
-        mask_stack = data["s2_mask"].values.copy()
-
-        ## mask the ndvi data
-        ndvi_stack[mask_stack == 1] = 255
-        ndvi_stack[ndvi_stack > 250] = 255
-
-        ## count the amount of invalid data per acquisition and sort accordingly
-        sum_invalid = np.sum(ndvi_stack == 255, axis=(0, 1))
-
-        ## if we have enough clear images (without ANY missing values), we're good to go, and we will use all of them (could be more than 3!)
-        if len(np.where(sum_invalid == 0)[0]) > 3:
-            allgood = 1
-            _log.debug(f"Found {len(np.where(sum_invalid == 0)[0])} clear acquisitions -> good to go")
-            ndvi_stack = ndvi_stack[:, :, np.where(sum_invalid == 0)[0]]
-
-        ## else we need to add some images that do contain some nan's; in this case we will select just the 3 best ones
-        else:
-            _log.debug(
-                f"Found {len(np.where(sum_invalid == 0)[0])} clear acquisitions -> appending some bad images as well!"
+    ## if the stack doesn't have at least 3 bands, we cannot process this window
+    if nrValidBands < 3:
+        inspect(message="Not enough input data for this window -> skipping!")
+        clear_session()
+        gc.collect()
+        return None
+    nbModels = 2
+    nbPerModel = 1
+    ## we'll do 12 predictions: use 3 networks, and for each randomly take 3 NDVI bands and repeat 4 times
+    prediction = np.zeros((patch_size, patch_size, nbModels * nbPerModel))
+    for model_counter in range(nbModels):
+        for i in range(nbPerModel):
+            prediction[:, :, i + nbPerModel*model_counter] = np.squeeze(
+                models[model_counter].predict(
+                    ndvi_stack[
+                        :,
+                        :,
+                        np.random.choice(
+                            np.arange(nrValidBands), size=3, replace=False
+                        ),
+                    ].reshape(1, patch_size * patch_size, 3)
+                ).reshape((patch_size, patch_size))
             )
-            allgood = 0
-            idxsorted = np.argsort(sum_invalid)
-            ndvi_stack = ndvi_stack[:, :, idxsorted[0:4]]
+    clear_session()  # to avoid memory leakage executors
+    gc.collect()
 
-        ## fill the NaN values with 0
-        ndvi_stack[ndvi_stack == 255] = 0
-
-        ## convert to fractional number
-        ndvi_stack = ndvi_stack / 250.0
-
-        ## check whether you actually supplied 3 images or more
-        nrValidBands = ndvi_stack.shape[2]
-
-        ## if the stack doesn't have at least 3 bands, we cannot process this window
-        if nrValidBands < 3:
-            _log.warning("Not enough input data for this window -> skipping!")
-            clear_session()
-            gc.collect()
-            return None
-        ## else, let's do inference!
-        else:
-            ## we'll do 12 predictions: use 3 networks, and for each randomly take 3 NDVI bands and repeat 4 times
-            prediction = np.zeros((patch_size, patch_size, 12))
-            for i in range(4):
-                prediction[:, :, i] = np.squeeze(
-                    model1.predict(
-                        ndvi_stack[
-                            :,
-                            :,
-                            np.random.choice(np.arange(nrValidBands), size=3, replace=False),
-                        ].reshape(1, patch_size * patch_size, 3)
-                    ).reshape((patch_size, patch_size))
-                )
-
-            for i in range(4):
-                prediction[:, :, i + 4] = np.squeeze(
-                    model2.predict(
-                        ndvi_stack[
-                            :,
-                            :,
-                            np.random.choice(np.arange(nrValidBands), size=3, replace=False),
-                        ].reshape(1, patch_size * patch_size, 3)
-                    ).reshape((patch_size, patch_size))
-                )
-
-            for i in range(4):
-                prediction[:, :, i + 8] = np.squeeze(
-                    model3.predict(
-                        ndvi_stack[
-                            :,
-                            :,
-                            np.random.choice(np.arange(nrValidBands), size=3, replace=False),
-                        ].reshape(1, patch_size * patch_size, 3)
-                    ).reshape((patch_size, patch_size))
-                )
-
-            clear_session()  # to avoid memory leakage executors
-            gc.collect()
-
-            ## final prediction is the median of all predictions per pixel
-            final_prediction = np.median(prediction, axis=2)
-
-            return (final_prediction, allgood)
+    ## final prediction is the median of all predictions per pixel
+    final_prediction = np.median(prediction, axis=2)
+    return final_prediction
 
 
-def apply_datacube(cube: XarrayDataCube, context: Dict) -> XarrayDataCube:
-    modeldir = "/data/users/Public/driesseb/fielddelineation"
-
-    ## if you would specify a context, you can use the method "get" to retrieve the value
-    # if context is not None:
-    #     startdate = context.get('startdate', "2019-01-01")
-
-    ## get the array and transpose
-    cubearray: xarray.DataArray = cube.get_array()
+def preprocessDatacube(cubearray: XarrayDataCube) -> XarrayDataCube:
     cubearray = cubearray.transpose("x", "bands", "y", "t")
 
     ## get nan indices
@@ -153,20 +87,55 @@ def apply_datacube(cube: XarrayDataCube, context: Dict) -> XarrayDataCube:
     ## rescale data and just take NDVI to get rid of the band dimension
     cubearray = ((cubearray + 0.08) * 250.0)[:, 0, :, :]
 
-    ## transpose to format accepted by model
-    inputarray = cubearray.transpose("x", "y", "t")
+    ## transpose to format accepted by model and get the values
+    ndvi_stack = cubearray.transpose("x", "y", "t").values
 
     ## create a mask where all valid values are 1 and all nans are 0
-    inputmask = ones_like(inputarray)
-    inputmask = inputmask.where(ufuncs_isnan(inputarray), 0.0)
+    mask_stack = ones_like(cubearray)
+    mask_stack = mask_stack.where(ufuncs_isnan(cubearray), 0.0).values
 
-    ## wrap the input array and the mask in a dictionary to pass to the processWindow method of the Segmentation class
-    inputdata = {"s2_ndvi": inputarray, "s2_mask": inputmask}
+    ## mask the ndvi data
+    ndvi_stack[mask_stack == 1] = 255
+    ndvi_stack[ndvi_stack > 250] = 255
 
+    ## count the amount of invalid data per acquisition and sort accordingly
+    sum_invalid = np.sum(ndvi_stack == 255, axis=(0, 1))
+
+    ## if we have enough clear images (without ANY missing values), we're good to go, 
+    ## and we will use all of them (could be more than 3!)
+    if len(np.where(sum_invalid == 0)[0]) > 3:
+        #inspect(f"Found {len(np.where(sum_invalid == 0)[0])} clear acquisitions -> good to go")
+        ndvi_stack = ndvi_stack[:, :, np.where(sum_invalid == 0)[0]]
+
+    ## else we need to add some images that do contain some nan's; in this case we will select just the 3 best ones
+    else:
+        #inspect(f"Found {len(np.where(sum_invalid == 0)[0])} clear acquisitions -> appending some bad images as well!")
+        idxsorted = np.argsort(sum_invalid)
+        ndvi_stack = ndvi_stack[:, :, idxsorted[:3]]
+
+    ## fill the NaN values with 0
+    ndvi_stack[ndvi_stack == 255] = 0
+
+    ## convert to fractional number
+    ndvi_stack = ndvi_stack / 250.0
+
+    ## return the stack
+    return ndvi_stack
+
+def apply_datacube(cube: XarrayDataCube, context: Dict) -> XarrayDataCube:
+    
     ## load in the pretrained U-Net keras models and do inference!
-    s = Segmentation()
+    modeldir = "/data/users/Public/driesseb/fielddelineation" #TODO: replace this with ONNX
     models = load_models(modeldir)
-    (result, allgood) = s.processWindow(models, inputdata)
+
+    ## get the array and transpose
+    cubearray: xarray.DataArray = cube.get_array()
+    
+    ## preprocess the datacube
+    ndvi_stack = preprocessDatacube(cubearray)
+
+    ## process the window
+    result = processWindow(models, ndvi_stack)
 
     ## transform your numpy array predictions into an xarray
     result = result.astype(np.float64)
@@ -182,5 +151,5 @@ def apply_datacube(cube: XarrayDataCube, context: Dict) -> XarrayDataCube:
             "bands": ["prediction"],
         },
     )
-
+    # Return the result
     return XarrayDataCube(result_xarray)
