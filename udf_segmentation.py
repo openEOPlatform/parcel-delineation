@@ -1,6 +1,5 @@
 import functools
 import gc
-import logging
 import os
 from typing import Dict
 
@@ -11,8 +10,6 @@ from tensorflow.keras.backend import clear_session
 from tensorflow.keras.models import load_model
 from xarray.core.common import ones_like
 from xarray.ufuncs import isnan as ufuncs_isnan
-
-_log = logging.getLogger(__name__)
 
 
 @functools.lru_cache(maxsize=25)
@@ -46,8 +43,8 @@ def processWindow(models, ndvi_stack, patch_size=128):
         clear_session()
         gc.collect()
         return None
-    nbModels = 2
-    nbPerModel = 1
+    nbModels = 3
+    nbPerModel = 4
     ## we'll do 12 predictions: use 3 networks, and for each randomly take 3 NDVI bands and repeat 4 times
     prediction = np.zeros((patch_size, patch_size, nbModels * nbPerModel))
     for model_counter in range(nbModels):
