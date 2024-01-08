@@ -1,74 +1,91 @@
 import functools
 import gc
-import os
+import sys
 from typing import Dict
 
 import numpy as np
-import xarray
+import xarray as xr
 from openeo.udf import XarrayDataCube, inspect
-from tensorflow.keras.backend import clear_session
-from tensorflow.keras.models import load_model
 from xarray.core.common import ones_like
 from xarray.ufuncs import isnan as ufuncs_isnan
 
+# Add the onnx dependencies to the path
+sys.path.insert(0, "onnx_deps")
+import onnxruntime as ort
+
+model_names = frozenset([
+    "BelgiumCropMap_unet_3BandsGenerator_Network1.onnx",
+    "BelgiumCropMap_unet_3BandsGenerator_Network2.onnx",
+    "BelgiumCropMap_unet_3BandsGenerator_Network3.onnx",
+])
 
 @functools.lru_cache(maxsize=25)
-def load_models(modeldir):
+def load_ort_sessions(names):
     """
     Load the models and make the prediction functions.
     The lru_cache avoids loading the model multiple times on the same worker.
 
     @param modeldir: Model directory
-    @return: Loaded models
+    @return: Loaded model sessions
     """
-
-    print("Loading convolutional neural networks ...")
-    weightsmodel1 = os.path.join(modeldir, "BelgiumCropMap_unet_3BandsGenerator_Network1.h5")
-    weightsmodel2 = os.path.join(modeldir, "BelgiumCropMap_unet_3BandsGenerator_Network2.h5")
-    weightsmodel3 = os.path.join(modeldir, "BelgiumCropMap_unet_3BandsGenerator_Network3.h5")
+    inspect(message="Loading convolutional neural networks as ONNX runtime sessions ...")
     return [
-        load_model(weightsmodel1),
-        load_model(weightsmodel2),
-        load_model(weightsmodel3),
+        ort.InferenceSession(f"onnx_models/{model_name}")
+        for model_name in names
     ]
 
-
-def processWindow(models, ndvi_stack, patch_size=128):
+def process_window_onnx(ndvi_stack, patch_size=128):
     ## check whether you actually supplied 3 images or more
-    nrValidBands = ndvi_stack.shape[2]
+    nr_valid_bands = ndvi_stack.shape[2]
 
     ## if the stack doesn't have at least 3 bands, we cannot process this window
-    if nrValidBands < 3:
+    if nr_valid_bands < 3:
         inspect(message="Not enough input data for this window -> skipping!")
-        clear_session()
-        gc.collect()
+        # gc.collect()
         return None
-    nbModels = 3
-    nbPerModel = 4
+    
     ## we'll do 12 predictions: use 3 networks, and for each randomly take 3 NDVI bands and repeat 4 times
-    prediction = np.zeros((patch_size, patch_size, nbModels * nbPerModel))
-    for model_counter in range(nbModels):
-        for i in range(nbPerModel):
-            prediction[:, :, i + nbPerModel*model_counter] = np.squeeze(
-                models[model_counter].predict(
-                    ndvi_stack[
-                        :,
-                        :,
-                        np.random.choice(
-                            np.arange(nrValidBands), size=3, replace=False
-                        ),
-                    ].reshape(1, patch_size * patch_size, 3)
-                ).reshape((patch_size, patch_size))
+    ort_sessions = load_ort_sessions(model_names)
+    number_of_models = len(ort_sessions)
+
+    number_per_model = 4
+    prediction = np.zeros((patch_size, patch_size, number_of_models * number_per_model))
+
+    for model_counter in range(number_of_models):
+        ## load the current model
+        ort_session = ort_sessions[model_counter]
+
+        ## make 4 predictions per model
+        for i in range(number_per_model):
+            ## define the input data
+            input_data = ndvi_stack[
+                                :,
+                                :,
+                                np.random.choice(
+                                    np.arange(nr_valid_bands), size=3, replace=False
+                                ),
+                            ].reshape(1, patch_size * patch_size, 3)
+            ort_inputs = {
+                ort_session.get_inputs()[0].name: input_data
+            }
+
+            ## make the prediction
+            ort_outputs = ort_session.run(None, ort_inputs)
+            prediction[:, :, i + number_per_model*model_counter] =  np.squeeze(
+                ort_outputs[0]\
+                    .reshape((patch_size, patch_size))
             )
-    clear_session()  # to avoid memory leakage executors
+
+    ## free up some memory to avoid memory errors
     gc.collect()
 
     ## final prediction is the median of all predictions per pixel
     final_prediction = np.median(prediction, axis=2)
+    inspect(message="prediction result", data=final_prediction)
     return final_prediction
 
 
-def preprocessDatacube(cubearray: XarrayDataCube) -> XarrayDataCube:
+def preprocess_datacube(cubearray: XarrayDataCube) -> XarrayDataCube:
     cubearray = cubearray.transpose("x", "bands", "y", "t")
 
     ## get nan indices
@@ -120,23 +137,18 @@ def preprocessDatacube(cubearray: XarrayDataCube) -> XarrayDataCube:
     return ndvi_stack
 
 def apply_datacube(cube: XarrayDataCube, context: Dict) -> XarrayDataCube:
-    
-    ## load in the pretrained U-Net keras models and do inference!
-    modeldir = "/data/users/Public/driesseb/fielddelineation" #TODO: replace this with ONNX
-    models = load_models(modeldir)
-
     ## get the array and transpose
-    cubearray: xarray.DataArray = cube.get_array()
+    cubearray: xr.DataArray = cube.get_array()
     
     ## preprocess the datacube
-    ndvi_stack = preprocessDatacube(cubearray)
+    ndvi_stack = preprocess_datacube(cubearray)
 
     ## process the window
-    result = processWindow(models, ndvi_stack)
+    result = process_window_onnx(ndvi_stack)
 
     ## transform your numpy array predictions into an xarray
     result = result.astype(np.float64)
-    result_xarray = xarray.DataArray(
+    result_xarray = xr.DataArray(
         result,
         dims=["x", "y"],
         coords={"x": cubearray.coords["x"], "y": cubearray.coords["y"]},
@@ -144,7 +156,7 @@ def apply_datacube(cube: XarrayDataCube, context: Dict) -> XarrayDataCube:
     # Reintroduce time and bands dimensions
     result_xarray = result_xarray.expand_dims(
         dim={
-            "t": [np.datetime64(str(cubearray.t.dt.year.values[0]) + "-01-01")],
+            "t": [np.datetime64(str(cubearray.t.dt.year.values[0]) + "-01-01")], 
             "bands": ["prediction"],
         },
     )
