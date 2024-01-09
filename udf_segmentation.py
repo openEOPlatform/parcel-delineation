@@ -28,7 +28,7 @@ def load_ort_sessions(names):
     @param modeldir: Model directory
     @return: Loaded model sessions
     """
-    inspect(message="Loading convolutional neural networks as ONNX runtime sessions ...")
+    # inspect(message="Loading convolutional neural networks as ONNX runtime sessions ...")
     return [
         ort.InferenceSession(f"onnx_models/{model_name}")
         for model_name in names
@@ -81,11 +81,11 @@ def process_window_onnx(ndvi_stack, patch_size=128):
 
     ## final prediction is the median of all predictions per pixel
     final_prediction = np.median(prediction, axis=2)
-    inspect(message="prediction result", data=final_prediction)
+    # inspect(message="prediction result", data=final_prediction)
     return final_prediction
 
 
-def preprocess_datacube(cubearray: XarrayDataCube) -> XarrayDataCube:
+def preprocess_datacube(cubearray: XarrayDataCube) -> XarrayDataCube: #TODO: cleanup preprocessing 
     cubearray = cubearray.transpose("x", "bands", "y", "t")
 
     ## get nan indices

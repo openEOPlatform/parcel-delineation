@@ -3,7 +3,7 @@ import xarray
 from openeo.udf import XarrayDataCube
 from skimage import segmentation
 from skimage.filters import sobel
-from skimage.future import graph
+from skimage import graph
 
 
 def apply_datacube(cube: XarrayDataCube, context: dict) -> XarrayDataCube:
@@ -16,7 +16,7 @@ def apply_datacube(cube: XarrayDataCube, context: dict) -> XarrayDataCube:
 
     # Perform felzenszwalb segmentation
     segment = np.array(
-        segmentation.felzenszwalb(inimage, scale=120, sigma=0.0, min_size=30, multichannel=False)
+        segmentation.felzenszwalb(inimage, scale=120, sigma=0.0, min_size=30, channel_axis=None)
     ).astype(np.int32)
 
     # Perform the rag boundary analysis and merge the segments
