@@ -11,6 +11,7 @@ Please contact the authors in case you're interested in a field detector!
 
 - Kristof Van Tricht
 - Jeroen Dries
+- Victor Verhaert
 
 Tuning by:
 - Kasper Bonte
