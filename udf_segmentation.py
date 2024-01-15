@@ -6,7 +6,6 @@ from typing import Dict
 import numpy as np
 import xarray as xr
 from openeo.udf import inspect
-# from xarray.core.common import ones_like
 from xarray.ufuncs import isnan as ufuncs_isnan
 from xarray import DataArray
 
