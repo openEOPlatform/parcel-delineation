@@ -1,3 +1,7 @@
+# Deprecated
+This notebook is now available as an [openEO community example](https://github.com/Open-EO/openeo-community-examples/tree/main/python/ParcelDelineation).
+The version in this repository is no longer maintained.
+
 # Parcel delineation
 This is an [openEO](https://openeo.org/) example for delineating agricultural parcels based on a neural network, using Sentinel-2 input data.
 
